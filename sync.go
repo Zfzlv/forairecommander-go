@@ -17,8 +17,18 @@ import (
     "github.com/go-redis/redis"
     "encoding/json"
     "os"
+    "strings"
+    "sort"
     //"io"
 )
+type Pair struct {
+    Key   string
+    Value int
+}
+type PairList []Pair
+func (p PairList) Len() int           { return len(p) }
+func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
 type Tangseng struct {  
     Id    string  `xorm:"varchar(255) pk notnull unique 'id'"`
     Types    int  `xorm:"tinyint(2) 'types'"`
@@ -198,6 +208,7 @@ type DataSingle struct{
     Submit_time int
     Source_type int
     Is_submit int
+    Question_id int
 }
 
 type DataS struct{
@@ -207,6 +218,7 @@ type DataS struct{
     Used_time int
     Submit_time int
     Is_submit int
+    Question_id int
 }
 
 type SafeRedis struct {
@@ -221,42 +233,40 @@ const Counts = 100
 //var chforRedis = make(chan []DataSingle,4000000)
 var t1 time.Time
 var redisync SafeRedis
-const Trycount = 5
-const Dayscount = 5
-var ridge,_ = time.Parse("2006-01-02","2017-07-10")
+var Trycount,_=strconv.Atoi(os.Getenv("TRYCOUNT"))
+var Dayscount,_=strconv.Atoi(os.Getenv("DAYSCOUNT"))
+var ridge,_ = time.Parse("2006-01-02","2017-02-01")
 func init() {  
     var err error  
     t1 = time.Now()
     fmt.Println("-修复脚本开始运行-",time.Now().String())
-    en_origin, err = xorm.NewEngine("mysql", "rd:DSykz6a7Tu8MnN8G@tcp(rr-bp156ya5cm9d985sdo.mysql.rds.aliyuncs.com:3306)/tangseng?charset=utf8")
+    ENLOCAL:= os.Getenv("ENLOCAL")
+    ENLOCALDB:= os.Getenv("ENLOCALDB")
+    ENLOCALPWD:= os.Getenv("ENLOCALPWD")
+    ENLOCALNAME:= os.Getenv("ENLOCALNAME")
+    ENORIGIN:= os.Getenv("ENORIGIN")
+    ENORIGINDB:= os.Getenv("ENORIGINDB")
+    ENORIGINPWD:= os.Getenv("ENORIGINPWD")
+    ENORIGINNAME:= os.Getenv("ENORIGINNAME")
+    REDISPOOLAD:= os.Getenv("REDISPOOLAD")
+    REDISPOOLPWD:= os.Getenv("REDISPOOLPWD")
+    en_origin, err = xorm.NewEngine("mysql", ENORIGINNAME+":"+ENORIGINPWD+"@tcp("+ENORIGIN+":3306)/"+ENORIGINDB+"?charset=utf8")
     en_origin.SetMaxIdleConns(5)
     if err != nil {
         panic(err.Error())
+    }else{
+        fmt.Println("--已连上AI库---")
     }
-    fmt.Println("--已连上AI库---")
-    //defer en_origin.Close()
-    en_local, err = xorm.NewEngine("mysql", "wenba:KDAN82aw5g2XDNK4SQ6RsuEc4pl9DtBH@tcp(rm-bp1e92v83gxr464y6o.mysql.rds.aliyuncs.com:3306)/zujuan?charset=utf8")
+    en_local, err = xorm.NewEngine("mysql", ENLOCALNAME+":"+ENLOCALPWD+"@tcp("+ENLOCAL+":3306)/"+ENLOCALDB+"?charset=utf8")
     en_local.SetMaxIdleConns(5)
     if err != nil {
         panic(err.Error())
+    }else{
+        fmt.Println("--已连上本地库---") 
     }
-    fmt.Println("--已连上本地库---") 
-   //defer en_local.Close()
-    //en_origin.ShowSQL(true)  
-    //en_local.ShowSQL(true) 
-/*
-    if err = en_local.Sync(
-        new(Tangseng),
-        new(TangsengQuestions),
-        new(TangsengMiddle)); err != nil {  
-        log.Fatalf("Fail to sync struct to  table schema : %v", err)  
-    } else {  
-        fmt.Println("Succ sync struct to table schema")  
-    }  
-*/
     redisync.redis_pool = redis.NewClient(&redis.Options{
-        Addr:     "10.2.1.160:6379",
-        Password: "",
+        Addr:     REDISPOOLAD, 
+        Password: REDISPOOLPWD,
         DB:       0,
         PoolSize: 5,
     })
@@ -264,30 +274,11 @@ func init() {
     pong, err := redisync.redis_pool.Ping().Result()
     if err != nil && pong=="Pong" {
         panic(err.Error())
+    }else{
+        fmt.Println("--已连上Redis---")
     }
-
-    fmt.Println("--已连上Redis---")
 }  
-  
-/*
-func getTangseng_middle() (middles []tangseng_middle, err error) {  
-    ////////get person from DB  
-    middles = make([]tangseng_middle, 0)  
-  
-    if err = en_local.Find(&middles); err != nil {  
-        return nil, err  
-    }  
-  
-    fmt.Printf("Succ to get middles number : %d\n", len(middles))  
-    for i, d := range middles {  
-        fmt.Printf("DataIndex : %d        DataContent : %#v\n", i, d)  
-    }  
-    return middles, nil  
-} 
-  */
 func main() {  
-    //fmt.Println(getTodays())
-    //fmt.Println(reflect.TypeOf(time.Unix(1499927308, 0).Format("20060102  03:04:05")))
    start := flag.String("start", "", "开始时间")
    end := flag.String("end", "", "结束时间")
    stuid := flag.String("stuid", "", "学生ID")
@@ -317,9 +308,7 @@ func main() {
    /*fmt.Println(strconv.FormatInt(s.Unix(),10))
    fmt.Println(time.Unix(int64(1489622400),0).Format("20060102"))*/
    DiffDB(*start,*end,*stuid)
-   /*redisync.redis_pool.HSet("all","1042_2989_2_74254020_2_6_4","qw")
-   redisync.redis_pool.HSet("all","1042_2989_2_73935339_1_6_4","qw")
-   redisync.redis_pool.HSet("all","1042_3000_2_73937295_1_0_8","qw")*/
+   orderlists()
    //fmt.Println(reflect.TypeOf(strconv.Itoa(tt.Min)))
     //waitgroup.Wait()
     t2:=time.Now()
@@ -359,8 +348,13 @@ func createTangsengQuestion(questions []TangsengQuestions ) {
         num int64  
         err error  
     )  
-    if num, err = en_local.Insert(questions); err != nil {  
-        fmt.Println("Fail to Insert TangsengQuestion : %v", err)  
+    if num, err = en_local.Insert(questions); err != nil {
+        for _,question_single := range questions{
+            if num, err = en_local.Insert(question_single); err != nil { 
+                fmt.Println("Fail to Insert TangsengQuestion : %v", err) 
+            }
+            fmt.Println("Succ to insert TangsengQuestion number : %d\n", num)
+        }
     }  
     fmt.Println("Succ to insert TangsengQuestion number : %d\n", num)  
 }  
@@ -371,7 +365,12 @@ func createTangsengMiddle(middles []TangsengMiddle) {
         err error  
     )  
     if num, err = en_local.Insert(middles); err != nil {  
-        fmt.Println("Fail to Insert TangsengMiddle : %v", err)  
+        for _,middle_single := range middles{
+            if num, err = en_local.Insert(middle_single); err != nil { 
+                fmt.Println("Fail to Insert TangsengMiddle : %v", err)  
+            }
+            fmt.Println("Succ to insert TangsengMiddle number : %d\n", num)
+        }
     }  
     fmt.Println("Succ to insert TangsengMiddle number : %d\n", num)  
 } 
@@ -536,7 +535,8 @@ func InsertOrUpdateDb(datas []Data){
                     Used_time:tmp_q.Used_time,
                     Submit_time:tmp_q.Submit_time,
                     Source_type:tmp_t.Source_type,
-                    Is_submit:tmp_q.Is_submit}
+                    Is_submit:tmp_q.Is_submit,
+                    Question_id:tmp_q.Question_id}
                   if tmp_r.Submit_time == 0{
                      tmp_r.Submit_time = int(datas[i].Created_at.Unix())
                   }
@@ -564,7 +564,8 @@ func InsertOrUpdateDb(datas []Data){
                     Source_type:tmp_t.Source_type,
                     Used_time:tmp_q.Used_time,
                     Submit_time:tmp_q.Submit_time,
-                    Is_submit:tmp_q.Is_submit}  
+                    Is_submit:tmp_q.Is_submit,
+                    Question_id:tmp_q.Question_id}  
                 if tmp_u.Submit_time == 0{
                      tmp_u.Submit_time = int(datas[i].Created_at.Unix())
                 }
@@ -596,32 +597,41 @@ func InsertOrUpdateDb(datas []Data){
 
 func DiffDB(s,e,stuid string){
     var start,end time.Time
+    init:= os.Getenv("INIT")
     if s==""{
-        s="2016-08-30"  
+        if init=="1"{
+            s="2016-08-01" 
+        }else{
+            sx, _ := time.Parse("2006-01-02",time.Now().Format("2006-01-02"))
+            s = getBeforeDay(sx).Format("2006-01-02")
+        }
     }
     if e==""{
-        e = time.Now().Format("20060102") 
+        ex, _ := time.Parse("2006-01-02",time.Now().Format("2006-01-02"))
+        e = getAfterDay(ex).Format("2006-01-02")
     }
     start, _ = time.Parse("2006-01-02", s) 
     end, _ = time.Parse("2006-01-02", e)
     datas := make([]Data,0)
     for end.After(start){
+        t3:=time.Now()
         sqls := ""
         start1 := getBeforeDay(end)
         se := end.Format("20060102")
         ss := start1.Format("20060102")
         if ridge.After(start1){
-            sqls = "select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,b.type as Source_type,a.exercise_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"exercise_\",b.id) as Original_id,0 as Zhu_Score,\"0\" as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from exercise_question a,exercise b where a.exercise_id = b.id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\") or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
-            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"2\" as Source_type,a.homework_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"homework_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from student_homework_question a,student_homework b where a.homework_id = b.homework_id and a.stu_id = b.stu_id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\") or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
-            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,(case when a.score=a.question_score then 1 when a.score > (a.question_score/2) then 2 when a.score >0 then 3 else 0 end) as Score,a.score as Stu_score,a.question_score as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"8\" as Source_type,a.exam_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,a.submit_time as Zhu_sub,a.created_at as Created_at,b.stu_id as Stu_id,concat(\"exam_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.status as Is_submit from student_exam_question a,student_exam b where a.exam_id = b.exam_id and a.stu_id = b.stu_id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\") or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
+            sqls = "select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,b.type as Source_type,a.exercise_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"exercise_\",b.id) as Original_id,0 as Zhu_Score,\"0\" as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from exercise_question a,exercise b where a.exercise_id = b.id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\" and a.submit_time=0) or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
+            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"2\" as Source_type,a.homework_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"homework_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from student_homework_question a,student_homework b where a.homework_id = b.homework_id and a.stu_id = b.stu_id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\" and a.submit_time=0) or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
+            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,(case when a.score=a.question_score then 1 when a.score > (a.question_score/2) then 2 when a.score >0 then 3 else 0 end) as Score,a.score as Stu_score,a.question_score as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"8\" as Source_type,a.exam_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,a.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"exam_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from student_exam_question a,student_exam b where a.exam_id = b.exam_id and a.stu_id = b.stu_id and ((a.created_at >= \""+ss+"\" and a.created_at <= \""+se+"\" and a.submit_time=0) or (a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)+"))"
         }else{
             sqls = "select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,b.type as Source_type,a.exercise_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"exercise_\",b.id) as Original_id,0 as Zhu_Score,\"0\" as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from exercise_question a,exercise b where a.exercise_id = b.id and a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)
             sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,a.score as Score,\"0\" as Stu_score,0 as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"2\" as Source_type,a.homework_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,b.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"homework_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from student_homework_question a,student_homework b where a.homework_id = b.homework_id and a.stu_id = b.stu_id and a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)
-            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,(case when a.score=a.question_score then 1 when a.score > (a.question_score/2) then 2 when a.score >0 then 3 else 0 end) as Score,a.score as Stu_score,a.question_score as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"8\" as Source_type,a.exam_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,a.submit_time as Zhu_sub,a.created_at as Created_at,b.stu_id as Stu_id,concat(\"exam_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.status as Is_submit from student_exam_question a,student_exam b where a.exam_id = b.exam_id and a.stu_id = b.stu_id and a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)
+            sqls += " union select a.number as Number,a.question_id as Question_id,a.question_type as Question_type,a.stu_answer as Stu_answer,(case when a.score=a.question_score then 1 when a.score > (a.question_score/2) then 2 when a.score >0 then 3 else 0 end) as Score,a.score as Stu_score,a.question_score as Question_score,a.used_time as Used_time,a.submit_time as Submit_time,\"8\" as Source_type,a.exam_id as Source_id,b.subject as Subject,b.used_time as Zhu_use,a.submit_time as Zhu_sub,b.stu_id as Stu_id,concat(\"exam_\",b.id) as Original_id,0 as Zhu_Score,b.score as Zhu_Stscore,a.created_at as Created_at,a.status as Is_submit from student_exam_question a,student_exam b where a.exam_id = b.exam_id and a.stu_id = b.stu_id and a.submit_time >= "+strconv.FormatInt(start1.Unix()-28800,10)+" and a.submit_time < "+strconv.FormatInt(end.Unix()-28800,10)
         }
         if(stuid!=""){
             sqls = "select * from ("+sqls+")e where e.Stu_id in("+stuid+");"
         }
+        //fmt.Println(sqls)
         c := 1
          /*var f    *os.File
         var err1   error;
@@ -645,11 +655,14 @@ func DiffDB(s,e,stuid string){
             gc()
         }
       }else{
-         fmt.Println("*********Error***Get***Data***From*table*"+"**begin from***"+time.Now().String())
+         fmt.Println(err,"*********Error***Get***Data***From*table*"+"**at***"+ss)
       }
       datas = make([]Data,0)
       //time.Sleep(1 * time.Second)
       end = start1
+      t4:=time.Now()
+      d:=t4.Sub(t3)
+      fmt.Println("日期:",ss,"--完成--花费-",d)
     }
 }
 func SetToRedis(das []DataSingle){
@@ -664,7 +677,8 @@ func SetToRedis(das []DataSingle){
             Question_score:das[i].Question_score,
             Used_time:das[i].Used_time,
             Submit_time:das[i].Submit_time,
-            Is_submit:das[i].Is_submit}  
+            Is_submit:das[i].Is_submit,
+            Question_id:das[i].Question_id}  
         b, err := json.Marshal(ssx)
         if err != nil {
            fmt.Println("encoding faild---",das[i].Global_id)
@@ -676,10 +690,26 @@ func SetToRedis(das []DataSingle){
             keytwo := strconv.Itoa(das[i].Stu_id) + "_" + historys
             trys := 1
             //pl.LPush(keyone,das[i].Global_id)
-            _,errs := redisync.redis_pool.HSet(keyone,das[i].Global_id,string(b)).Result()
+            //_,errs := redisync.redis_pool.HSet(keyone,das[i].Global_id,string(b)).Result()
+            //cs := redisync.redis_pool.Exists(keyone).Val()
+            c,errs := redisync.redis_pool.Get(keyone).Result()
+            for errs != nil && trys <=Trycount{
+                c,errs = redisync.redis_pool.Get(keyone).Result()
+                trys++
+            }
+            sostr := ""
+            if errs==nil{
+                //c := redisync.redis_pool.Get(keyone).Val()
+                //xxx:=SubString(c,0,len(c)-1)
+                sostr = SubString(c,0,len(c)-1) + ",\""+das[i].Global_id+"\":"+string(b)+"}"   
+            }else{
+                sostr = "{\""+das[i].Global_id+"\":"+string(b)+"}"
+            }
+            trys = 1
+            errs = redisync.redis_pool.Set(keyone,sostr,0).Err()
             redisync.redis_pool.RPush(keyonekeys,das[i].Global_id)
             for errs!=nil && trys<=Trycount {
-                _,errs = redisync.redis_pool.HSet(keyone,das[i].Global_id,string(b)).Result()
+                errs = redisync.redis_pool.Set(keyone,sostr,0).Err()
                 trys++
             }
             if errs!=nil{
@@ -742,8 +772,13 @@ func SetToRedis(das []DataSingle){
                         fmt.Println(errs)
                     }
                 }
+                sx := strings.Split(das[i].Global_id,"_")
+                if len(sx)==6{
+                    see,_:=strconv.Atoi(sx[5])
+                    setAntiCheat(das[i].Stu_id,das[i].Source_type,see)
+                }
             }
-       }
+        }
     }
     //waitgroup.Done()
     //pl.Exec()
@@ -754,11 +789,36 @@ func UpdateToRedis(das []DataSingle){
     defer redisync.mux.Unlock()
     for i:=0;i<len(das);i++{
         keyone := "all_"+strconv.Itoa(das[i].Stu_id)
-        UpdateSingle(das[i],keyone)
+        //cs := redisync.redis_pool.Exists(keyone).Val()
+        trys:=1
+        cx,errs := redisync.redis_pool.Get(keyone).Result()
+        for errs != nil && trys <=Trycount{
+            cx,errs = redisync.redis_pool.Get(keyone).Result()
+            trys++
+        }
+        if errs==nil{
+                //cx := redisync.redis_pool.Get(keyone).Val()
+                var usr map[string]*DataS
+                json.Unmarshal([]byte(cx), &usr)
+                if _, ok := usr[das[i].Global_id]; ok {
+                    usr[das[i].Global_id].Score = das[i].Score
+                    usr[das[i].Global_id].Stu_score = das[i].Stu_score
+                    usr[das[i].Global_id].Question_score = das[i].Question_score
+                    usr[das[i].Global_id].Used_time = das[i].Used_time
+                    usr[das[i].Global_id].Submit_time = das[i].Submit_time
+                    usr[das[i].Global_id].Is_submit = das[i].Is_submit
+                    usr[das[i].Global_id].Question_id = das[i].Question_id
+                    bx, _ := json.Marshal(usr)
+                    redisync.redis_pool.Set(keyone,string(bx),0)
+                }
+        }else{
+                fmt.Println("Error*****UpdateRedis***"+keyone+"****not***exists")
+        }
+        //UpdateSingle(das[i],keyone)
         historys := time.Unix(int64(das[i].Submit_time),0).Format("20060102")
         keytwo := strconv.Itoa(das[i].Stu_id) + "_" + historys
         _,erro := redisync.redis_pool.HExists(keytwo,das[i].Global_id).Result()
-        trys := 1
+        trys = 1
         for erro!=nil && trys <=Dayscount{
             nn := strconv.Itoa(24*trys)
             d, _ := time.ParseDuration("-"+nn+"h")
@@ -776,10 +836,20 @@ func UpdateToRedis(das []DataSingle){
             if das[i].Source_type==4{
                 ket := strconv.Itoa(das[i].Stu_id) + "_0_" + todays
                 UpdateSingle(das[i],ket)
+                sx := strings.Split(das[i].Global_id,"_")
+                if len(sx)==6{
+                    see,_:=strconv.Atoi(sx[5])
+                    setAntiCheat(das[i].Stu_id,das[i].Source_type,see)
+                }
             }
             if das[i].Source_type==3{
                 ket := strconv.Itoa(das[i].Stu_id) + "_1_" + todays
                 UpdateSingle(das[i],ket)
+                sx := strings.Split(das[i].Global_id,"_")
+                if len(sx)==6{
+                    see,_:=strconv.Atoi(sx[5])
+                    setAntiCheat(das[i].Stu_id,das[i].Source_type,see)
+                }
             }
         }
     }
@@ -793,13 +863,20 @@ func UpdateSingle(rr DataSingle,keyx string){
             cs,errs = redisync.redis_pool.HGet(keyx,rr.Global_id).Result()
             trys++
         }
-        if errs != nil{
-            fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--未能获取到field")
-        }else{
+        ssv := DataS{
+            Score:rr.Score,
+            Stu_score:rr.Stu_score,
+            Question_score:rr.Question_score,
+            Used_time:rr.Used_time,
+            Submit_time:rr.Submit_time,
+            Is_submit:rr.Is_submit,
+            Question_id:rr.Question_id}  
+        b, err2 := json.Marshal(ssv)
+        if errs == nil{
             var stb DataS
             err1 := json.Unmarshal([]byte(cs), &stb)
             if err1 != nil {
-             fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--json未能decode")
+              //fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--json未能decode")
             } else {
                 if rr.Source_type==8{
                     stb.Stu_score = rr.Stu_score
@@ -809,28 +886,30 @@ func UpdateSingle(rr DataSingle,keyx string){
                 stb.Used_time = rr.Used_time
                 stb.Submit_time = rr.Submit_time
                 stb.Is_submit = rr.Is_submit
-                b, err2 := json.Marshal(stb)
-                if err2 != nil {
-                   fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--json未能encode")
-                }else{
-                   trys = 1
-                   _,errsx := redisync.redis_pool.HSet(keyx,rr.Global_id,string(b)).Result()
-                   for errsx!=nil && trys <=Trycount{
-                        _,errsx = redisync.redis_pool.HSet(keyx,rr.Global_id,string(b)).Result()
-                        trys++
-                   }
-                   if  errsx!=nil{
-                      fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--未能重新塞入")
-                   }
-                }
+                stb.Question_id = rr.Question_id
+                b, err2 = json.Marshal(stb)
             }
+        }
+        if err2 != nil {
+             fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--json未能encode")
+        }else{
+             trys = 1
+             _,errsx := redisync.redis_pool.HSet(keyx,rr.Global_id,string(b)).Result()
+             for errsx!=nil && trys <=Trycount{
+                _,errsx = redisync.redis_pool.HSet(keyx,rr.Global_id,string(b)).Result()
+                 trys++
+             }
+             if  errsx!=nil{
+                fmt.Println("更新：Redis--",keyx,"--失败---",rr.Global_id,"---原因是--未能重新塞入")
+             }
         }
 }
 
 func getTodays() string{
-    nn := strconv.Itoa(24*19)
+    /*nn := strconv.Itoa(24*19)
     dx, _ := time.ParseDuration("-"+nn+"h")
-    todays := time.Now().Add(dx).Format("20060102")
+    todays := time.Now().Add(dx).Format("20060102")*/
+    todays := time.Now().Format("20060102")
     return todays
 }
 
@@ -858,4 +937,188 @@ func check(e error) {
  if e != nil {
   panic(e)
  }
+}
+
+/*
+  **反作弊模块
+  **@param stuid-学生ID
+  **@param types-来源类型
+  **@param suj-学科ID
+*/
+func setAntiCheat(stuid,types,suj int){
+    if types==3 || types == 4{
+        if types == 3{
+            types = 1
+        }else if types == 4{
+            types = 0
+        }
+        fmt.Println("开始实时运算--学生：",stuid,";学科:",suj,";来源:",types)
+        keyt := "anti_cheat_"+strconv.Itoa(suj)+"_"+strconv.Itoa(types)+"_new"
+        _,err := redisync.redis_pool.HGet(keyt,strconv.Itoa(stuid)).Result()
+        if err != nil{
+            keyoen := strconv.Itoa(stuid)+"_"+strconv.Itoa(types)+"_"+getTodays()
+            cs,errs := redisync.redis_pool.HGetAll(keyoen).Result()
+            trys := 1
+            for errs != nil && trys <=Trycount{
+                cs,errs = redisync.redis_pool.HGetAll(keyoen).Result()
+                trys++
+            }
+            if errs != nil{
+                fmt.Println("实时运算失败：Redis--",keyoen,"---原因是--未能获取到Hash值")
+            }else{
+                select_total := 0
+                select_time := 0
+                select_correct := 0.0
+                select_acc := 0.0
+                select_average_time := 0
+                cheat_flag := "False"
+                for k, v := range cs {  
+                    sx := strings.Split(k,"_")
+                    if len(sx)==6{
+                        var stb DataS
+                        err1 := json.Unmarshal([]byte(v), &stb)
+                        if err1 == nil{
+                            if sx[4]=="0" || sx[4]=="6"{
+                                select_total++
+                                select_time += stb.Used_time
+                                if stb.Score == 1{
+                                    select_correct += 1.0
+                                }else if stb.Score == 2{
+                                    select_correct += 0.5
+                                }
+                            }
+                        }
+                    }
+                }
+                if select_total >0 {
+                    select_acc = select_correct / float64(select_total)
+                    select_average_time = select_time / select_total
+                }
+                if select_total >= 9{
+                    if select_acc >=0.34 && select_acc < 0.45 && select_average_time <= 5{
+                        cheat_flag = "True"
+                    }else if select_acc >=0.23 && select_acc < 0.34 && select_average_time <= 10{
+                        cheat_flag = "True"
+                    }else if select_acc < 0.23 && select_average_time <= 15{
+                        cheat_flag = "True"
+                    }
+                }
+                if cheat_flag == "True"{
+                    trys = 1
+                    _,errsx := redisync.redis_pool.HSet(keyt,strconv.Itoa(stuid),"True").Result()
+                    for errsx!=nil && trys <=Trycount{
+                        _,errsx = redisync.redis_pool.HSet(keyt,strconv.Itoa(stuid),"True").Result()
+                        trys++
+                    }
+                    tt, _ := time.Parse("2006-01-02", time.Now().Format("2006-01-02"))
+                    dtx, _ := time.ParseDuration("16h")
+                    redisync.redis_pool.ExpireAt(keyt,tt.Add(dtx))
+                }
+            }
+        }
+        fmt.Println("结束实时运算--学生：",stuid,";学科:",suj,";来源:",types)
+    }
+}
+func SubString(str string,begin,length int) (substr string) {  
+  // 将字符串的转换成[]rune  
+  rs := []rune(str)  
+  lth := len(rs)  
+    
+  // 简单的越界判断  
+  if begin < 0 {  
+    begin = 0  
+  }  
+  if begin >= lth {  
+    begin = lth  
+  }  
+  end := begin + length  
+  if end > lth {  
+    end = lth   
+  }  
+    
+  // 返回子串  
+  return string(rs[begin:end])  
+}
+
+func orderlists(){
+    redisync.mux.Lock()
+    defer redisync.mux.Unlock()
+    keyarray := redisync.redis_pool.Keys("*_"+getTodays()+"_keys").Val()
+    for _,k := range keyarray{
+        fmt.Println("正在整理***"+k+"*****")
+        t1:=time.Now()
+        var sl map[string]int
+        sl = make(map[string]int)
+        keyone := SubString(k,0,len(k)-5)
+        trys:=1
+        cx,errs := redisync.redis_pool.HGetAll(keyone).Result()
+        for errs != nil && trys <=Trycount{
+            cx,errs = redisync.redis_pool.HGetAll(keyone).Result()
+            trys++
+        }
+        if errs==nil{
+            for kk,vv := range cx{
+                var su DataS
+                json.Unmarshal([]byte(vv), &su)
+                sl[kk] = su.Submit_time
+            }
+            p:=sortMapByValue(sl)
+            redisync.redis_pool.Del(k)
+            for _, c := range p {
+                 redisync.redis_pool.LPush(k,c.Key)
+            }
+        }else{
+                fmt.Println("Error*****UpdateList***"+keyone+"****not***exists")
+        }
+        fmt.Println("整理结束***"+k+"*****")
+        t2:=time.Now()
+        d:=t2.Sub(t1)
+        fmt.Println("花费时间:",d)
+    }
+
+    keyarray = redisync.redis_pool.Keys("all_*_keys").Val()
+    for _,k := range keyarray{
+        fmt.Println("正在整理***"+k+"*****")
+        t1:=time.Now()
+        var sl map[string]int
+        sl = make(map[string]int)
+        keyone := SubString(k,0,len(k)-5)
+        trys:=1
+        cx,errs := redisync.redis_pool.Get(keyone).Result()
+        for errs != nil && trys <=Trycount{
+            cx,errs = redisync.redis_pool.Get(keyone).Result()
+            trys++
+        }
+        if errs==nil{
+                //cx := redisync.redis_pool.Get(keyone).Val()
+                var usr map[string]*DataS
+                json.Unmarshal([]byte(cx), &usr)
+                for l,v := range usr{
+                    cc:=*v
+                    sl[l] = cc.Submit_time
+                }
+                p:=sortMapByValue(sl)
+                redisync.redis_pool.Del(k)
+                for _, c := range p {
+                    redisync.redis_pool.LPush(k,c.Key)
+                }
+        }else{
+                fmt.Println("Error*****UpdateList***"+keyone+"****not***exists")
+        }
+        fmt.Println("整理结束***"+k+"*****")
+        t2:=time.Now()
+        d:=t2.Sub(t1)
+        fmt.Println("花费时间:",d)
+    }
+}
+
+func sortMapByValue(m map[string]int) PairList {
+   p := make(PairList, len(m))
+   i := 0
+   for k, v := range m {
+      p[i] = Pair{k, v}
+      i++
+   }
+   sort.Sort(p)
+   return p
 }
